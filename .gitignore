@@ -1,0 +1,8 @@
+.dart_tool/
+.packages
+build/
+*.log
+*.env
+.env*
+*.tmp
+.DS_Store

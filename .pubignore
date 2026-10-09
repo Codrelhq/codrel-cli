@@ -1,0 +1,9 @@
+# Pub publishing exclusions
+.dart_tool/
+.packages
+build/
+*.log
+*.env
+*.tmp
+.DS_Store
+components_data.json
