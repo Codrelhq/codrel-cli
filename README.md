@@ -4,7 +4,7 @@
 [![Dart SDK](https://img.shields.io/badge/dart-3.0%2B-blue.svg)](https://dart.dev)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
-The official command-line interface for **[Codrel](https://codrel.dev)** — the curated Flutter micro-interactions registry.
+The official command-line interface for **[Codrel](https://codrel-app.vercel.app)** — the curated Flutter micro-interactions registry.
 
 Codrel enables Flutter developers to discover, preview, and inject production-grade interactive widgets and animations directly into their codebases with a single command. Every component is fully customizable, self-contained, and automatically adapts to your preferred state management architecture.
 
@@ -14,6 +14,7 @@ Codrel enables Flutter developers to discover, preview, and inject production-gr
 
 - **Direct Injection**: Add interactive widgets directly into your project directory — no bloated runtime dependencies.
 - **Multi-Architecture Adaptation**: Generate components pre-configured for Vanilla Flutter, Riverpod, GetX, or BLoC.
+- **Compiles on install**: Every component is verified to compile standalone before it is published to the registry.
 - **Production-Ready**: Fluid 60fps animations, physics gestures, haptics, and responsive layout constraints.
 - **Material 3 Adaptive**: Components dynamically adapt to your application's light and dark color schemes.
 - **Smart Directory Detection**: Automatically detects your Flutter project structure and places components in your widgets directory.
@@ -42,7 +43,7 @@ Alternatively, add `codrel` to your project's `dev_dependencies`:
 
 ```yaml
 dev_dependencies:
-  codrel: ^1.0.0
+  codrel: ^1.1.0
 ```
 
 Then invoke commands via:
@@ -63,7 +64,7 @@ Downloads and injects a component into your Flutter project.
 # Add a component using standard Flutter (StatefulWidget)
 codrel add swipe-deck
 
-# Adapt for Riverpod (ConsumerStatefulWidget + StateNotifierProvider)
+# Riverpod 3 variant (Notifier + NotifierProvider)
 codrel add swipe-deck --arch riverpod
 
 # Adapt for GetX (GetxController + reactive state)
@@ -92,7 +93,7 @@ Browse all components available in the Codrel registry.
 # List all components
 codrel list
 
-# Filter by category tag
+# Filter by tag
 codrel list --tag gestures
 codrel list --tag auth
 codrel list --tag inputs
@@ -119,30 +120,44 @@ codrel info swipe-deck
 
 ## 🏛 Supported Architectures
 
-Codrel eliminates the friction of manually refactoring third-party widgets into your team's architectural conventions:
+Every component ships as a single, self-contained Dart file — no Codrel runtime, no extra dependencies for the vanilla version.
 
-| Architecture | Flag              | Output Structure                                                                                             |
-| :----------- | :---------------- | :----------------------------------------------------------------------------------------------------------- |
-| **Vanilla**  | `--arch vanilla`  | Standard Flutter `StatefulWidget` or `StatelessWidget`. Zero external state dependencies.                    |
-| **Riverpod** | `--arch riverpod` | Converts to `ConsumerStatefulWidget` and provides a dedicated `StateNotifierProvider` managing widget state. |
-| **GetX**     | `--arch getx`     | Generates a companion `GetxController` with observable reactive properties (`.obs`).                         |
-| **BLoC**     | `--arch bloc`     | Generates an immutable state model and corresponding `Cubit` for state emissions.                            |
+| Architecture | Flag              | Output                                                                                       | Requires           |
+| :----------- | :---------------- | :------------------------------------------------------------------------------------------- | :----------------- |
+| **Vanilla**  | _(default)_       | Standard Flutter `StatefulWidget`, zero dependencies.                                        | —                  |
+| **Riverpod** | `--arch riverpod` | Widget state moved into a Riverpod 3 `Notifier` + `NotifierProvider`, consumed via `ConsumerStatefulWidget`. | `flutter_riverpod` |
+| **GetX**     | `--arch getx`     | State moved into a `GetxController` with reactive `.obs` fields bound through `Obx`.         | `get`              |
+| **BLoC**     | `--arch bloc`     | State moved into a `Cubit` with an immutable state class, bound through `BlocBuilder`.       | `flutter_bloc`     |
+
+Architecture variants are generated from the vanilla source and only published to the registry after they pass a compile check against the current versions of `flutter_riverpod`, `get`, and `flutter_bloc`. If a variant has not been published yet, the CLI tells you instead of writing code, and the vanilla version is always available.
 
 ---
 
-## 📦 Component Registry Highlights
+## 📦 Component Registry
 
-A selection of micro-interactions available in the registry:
+| Slug                | Component                  | Complexity   |
+| :------------------ | :------------------------- | :----------- |
+| `swipe-deck`        | Swipe Card Deck            | Intermediate |
+| `crypto-chart`      | Interactive Price Chart    | Advanced     |
+| `bottom-sheet`      | Dynamic Multi-Snap Sheet   | Intermediate |
+| `smart-otp`         | Smart OTP & PIN Input      | Intermediate |
+| `morphing-cta`      | Morphing Checkout CTA      | Intermediate |
+| `dynamic-island`    | Dynamic Island Pill        | Advanced     |
+| `card-flip-3d`      | 3D Gyro Credit Card        | Advanced     |
+| `tactile-slider`    | Tactile Scrub Slider       | Intermediate |
+| `radial-menu`       | Radial Arc Menu            | Intermediate |
+| `reaction-bar`      | Interactive Reaction Bar   | Intermediate |
+| `swipe-action-tile` | Swipeable Action Tile      | Intermediate |
+| `liquid-tabs`       | Liquid Tab Indicator       | Intermediate |
+| `skeleton-shimmer`  | Wave Shimmer Skeleton      | Beginner     |
+| `magnetic-switch`   | Magnetic Day/Night Switch  | Beginner     |
+| `confetti-burst`    | Celebration Confetti Burst | Intermediate |
+| `dissolve-delete`   | Dissolve Delete            | Advanced     |
+| `jelly-refresh`     | Jelly Pull-to-Refresh      | Advanced     |
+| `magnetic-dock`     | Magnetic Dock              | Intermediate |
+| `scratch-reveal`    | Scratch-to-Reveal Card     | Intermediate |
 
-| Slug              | Component                 | Complexity   | Highlights                                                                    |
-| :---------------- | :------------------------ | :----------- | :---------------------------------------------------------------------------- |
-| `swipe-deck`      | Swipe Card Deck           | Intermediate | Tinder-style velocity physics, tilt rotation, dynamic like/pass stamps.       |
-| `smart-otp`       | Smart OTP & PIN Input     | Intermediate | Smooth auto-focus progression, paste interception, animated cursor indicator. |
-| `dynamic-island`  | Dynamic Island HUD        | Advanced     | Expandable pill notification header with morphing springs and physics.        |
-| `neu-button`      | Neumorphic Action Button  | Beginner     | Soft inset shadows, haptic feedback triggers, and smooth elevation dip.       |
-| `shimmer-card`    | Shimmer Skeleton Card     | Beginner     | High-performance linear gradient shimmer placeholder for content loading.     |
-| `liquid-progress` | Liquid Progress Indicator | Intermediate | Wave-sine animation with fluid volume filling effect.                         |
-| `pull-refresh`    | Elastic Pull-to-Refresh   | Intermediate | Rubber-band overscroll resistance with custom geometric spinner.              |
+Run `codrel list` for the live catalog.
 
 ---
 
@@ -162,7 +177,7 @@ Contributions to the Codrel registry and CLI are welcome! If you have built an i
 
 - Issues & Feature Requests: [GitHub Issues](https://github.com/Codrelhq/codrel-cli/issues)
 - Source Repository: [GitHub Repository](https://github.com/Codrelhq/codrel-cli)
-- Web Platform: [codrel.dev](https://codrel.dev)
+- Web Platform: [codrel-app.vercel.app](https://codrel-app.vercel.app)
 
 ---
 

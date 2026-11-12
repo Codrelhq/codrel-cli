@@ -1,27 +1,33 @@
 /// Codrel CLI library.
 ///
-/// Provides tools to browse, fetch, and adapt interactive Flutter
-/// micro-interaction components directly into client applications.
-library codrel;
+/// Browse, fetch, and install interactive Flutter micro-interaction
+/// components from the Codrel registry.
+library;
 
 import 'dart:io';
+import 'package:args/command_runner.dart';
 import 'src/command_runner.dart';
 
 export 'src/adapter/architecture_adapter.dart';
 export 'src/api/registry_client.dart';
 export 'src/command_runner.dart';
+export 'src/export/component_exporter.dart';
 export 'src/models/cli_component.dart';
 
-/// Entry point for running the Codrel CLI programmatically.
+/// Runs the Codrel CLI with [args] and exits the process with its status.
 Future<void> main(List<String> args) async {
   final runner = CodrelCommandRunner();
+  var exitCode = 0;
   try {
-    final exitCode = await runner.run(args);
-    exit(exitCode ?? 0);
+    exitCode = await runner.run(args) ?? 0;
+  } on UsageException catch (e) {
+    stderr.writeln(e);
+    exitCode = 64;
   } catch (error) {
     stderr.writeln('Error: $error');
-    exit(1);
+    exitCode = 1;
   } finally {
     runner.client.close();
   }
+  exit(exitCode);
 }

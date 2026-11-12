@@ -1,7 +1,7 @@
 name: codrel
 description: Codrel CLI - Interactive Flutter micro-interactions registry and code injector with multi-architecture support.
-version: 1.0.0
-homepage: https://codrel.dev
+version: 1.1.0
+homepage: https://codrel-app.vercel.app
 repository: https://github.com/Codrelhq/codrel-cli
 issue_tracker: https://github.com/Codrelhq/codrel-cli/issues
 topics:

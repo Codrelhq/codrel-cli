@@ -1,184 +1,241 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:codrel/codrel.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 void main() {
-  group('ArchitectureAdapter tests', () {
-    const sampleCode = '''
-import 'package:flutter/material.dart';
+  group('ComponentExporter', () {
+    const appStyleSource = """import 'package:flutter/material.dart';
+import '../../../../core/constants/app_colors.dart';
+import '../../../../core/utils/context_extension.dart';
 
-class TestWidget extends StatefulWidget {
-  const TestWidget({super.key});
+class Demo extends StatelessWidget {
+  const Demo({super.key});
 
-  @override
-  State<TestWidget> createState() => _TestWidgetState();
-}
-
-class _TestWidgetState extends State<TestWidget> {
   @override
   Widget build(BuildContext context) {
-    return Container();
+    return ColoredBox(
+      color: context.isDark ? AppColors.darkBg : AppColors.termYellow,
+    );
   }
 }
-''';
+""";
 
-    test('adapts to vanilla keeping StatefulWidget intact', () {
-      final result = ArchitectureAdapter.adapt(
-        rawCode: sampleCode,
-        componentId: 'test-widget',
-        architecture: 'vanilla',
-      );
-      expect(result, contains('class TestWidget extends StatefulWidget'));
-      expect(
-          result, contains('class _TestWidgetState extends State<TestWidget>'));
+    test('removes internal imports and inlines only used tokens', () {
+      final out = ComponentExporter.makeSelfContained(appStyleSource);
+      expect(out, isNot(contains('core/constants')));
+      expect(out, isNot(contains('context_extension.dart')));
+      expect(out, isNot(contains('AppColors.')));
+      expect(out, contains('abstract final class _CodrelColors'));
+      expect(out, contains('static const Color darkBg = Color(0xFF0A0B0E);'));
+      expect(out, contains('static const Color termYellow'));
+      expect(out, isNot(contains('static const Color lightBg')));
+      expect(out, contains('extension _CodrelContext on BuildContext'));
+      expect(out, contains('bool get isDark'));
+      expect(out, isNot(contains('get textTheme')));
+      expect(out.indexOf('_CodrelColors {'),
+          greaterThan(out.indexOf("import 'package:flutter/material.dart';")));
     });
 
-    test('adapts to riverpod with ConsumerState and provider', () {
-      final result = ArchitectureAdapter.adapt(
-        rawCode: sampleCode,
-        componentId: 'test-widget',
-        architecture: 'riverpod',
-      );
-      expect(
-          result, contains('package:flutter_riverpod/flutter_riverpod.dart'));
-      expect(result, contains('ConsumerStatefulWidget'));
-      expect(result, contains('ConsumerState<TestWidget>'));
-      expect(
-          result, contains('class TestWidgetNotifier extends StateNotifier'));
-      expect(result, contains('final test_widgetProvider ='));
+    test('is idempotent', () {
+      final once = ComponentExporter.makeSelfContained(appStyleSource);
+      expect(ComponentExporter.makeSelfContained(once), equals(once));
     });
 
-    test('adapts to getx with GetxController', () {
-      final result = ArchitectureAdapter.adapt(
-        rawCode: sampleCode,
-        componentId: 'test-widget',
-        architecture: 'getx',
-      );
-      expect(result, contains('package:get/get.dart'));
-      expect(result,
-          contains('class TestWidgetController extends GetxController'));
-      expect(result, contains('.obs'));
+    test('rejects unknown project-internal imports', () {
+      const source = """import 'package:flutter/material.dart';
+import '../../../../core/widgets/app_button.dart';
+
+class X {}
+""";
+      expect(() => ComponentExporter.makeSelfContained(source),
+          throwsA(isA<ExportException>()));
     });
 
-    test('adapts to bloc with Cubit', () {
-      final result = ArchitectureAdapter.adapt(
-        rawCode: sampleCode,
-        componentId: 'test-widget',
-        architecture: 'bloc',
+    test('rejects unknown color tokens', () {
+      const source = """import 'package:flutter/material.dart';
+const c = AppColors.doesNotExist;
+""";
+      expect(() => ComponentExporter.makeSelfContained(source),
+          throwsA(isA<ExportException>()));
+    });
+
+    test('parses tokens from an AppColors source file', () {
+      final tokens = ComponentExporter.parseColorTokens(
+        'static const Color accent = Color(0xFF5E6AD2);\n'
+        'static const Color transparent = Colors.transparent;',
       );
-      expect(result, contains('package:flutter_bloc/flutter_bloc.dart'));
-      expect(result,
-          contains('class TestWidgetCubit extends Cubit<TestWidgetState>'));
+      expect(tokens, {
+        'accent': 'Color(0xFF5E6AD2)',
+        'transparent': 'Colors.transparent',
+      });
+    });
+
+    test('default tokens mirror the Codrel app palette', () {
+      final appColors =
+          File('../codrel_app/lib/core/constants/app_colors.dart');
+      if (!appColors.existsSync()) return;
+      expect(
+        ComponentExporter.parseColorTokens(appColors.readAsStringSync()),
+        equals(ComponentExporter.defaultColorTokens),
+      );
     });
   });
 
-  group('CodrelCommandRunner CLI execution tests', () {
+  group('RegistryClient.isValidSlug', () {
+    test('accepts kebab-case slugs and rejects injection attempts', () {
+      expect(RegistryClient.isValidSlug('swipe-deck'), isTrue);
+      expect(RegistryClient.isValidSlug('card-flip-3d'), isTrue);
+      expect(RegistryClient.isValidSlug('a&select=*'), isFalse);
+      expect(RegistryClient.isValidSlug('../etc'), isFalse);
+      expect(RegistryClient.isValidSlug(''), isFalse);
+    });
+  });
+
+  group('CodrelCommandRunner', () {
     late Directory tempDir;
     late CodrelCommandRunner runner;
 
+    const vanillaSource = """import 'package:flutter/material.dart';
+import '../../../../core/constants/app_colors.dart';
+
+class SwipeCardDeck extends StatelessWidget {
+  const SwipeCardDeck({super.key});
+
+  @override
+  Widget build(BuildContext context) => const ColoredBox(color: AppColors.accent);
+}
+""";
+
+    const riverpodVariant = """import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+class SwipeCardDeck extends ConsumerWidget {
+  const SwipeCardDeck({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => const SizedBox();
+}
+""";
+
+    const legacyRiverpodVariant =
+        """import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+class DeckNotifier extends StateNotifier<int> {
+  DeckNotifier() : super(0);
+}
+""";
+
+    Map<String, dynamic> row({Map<String, String> variants = const {}}) => {
+          'id': 'swipe-deck',
+          'name': 'Swipe Card Deck',
+          'file_name': 'swipe_card_deck.dart',
+          'description': 'Cards',
+          'complexity': 'Intermediate',
+          'tags': ['gestures'],
+          'downloads_count': 3,
+          'code_template': vanillaSource,
+          'architecture_templates': variants,
+        };
+
+    CodrelCommandRunner buildRunner({Map<String, String> variants = const {}}) {
+      final mock = MockClient((request) async {
+        final path = request.url.path;
+        if (path.endsWith('/rpc/increment_downloads')) {
+          return http.Response('', 204);
+        }
+        if (path.endsWith('/functions/v1/convert-architecture')) {
+          return http.Response('{"error":"not published"}', 404);
+        }
+        if (path.endsWith('/rest/v1/components')) {
+          final id = request.url.queryParameters['id'];
+          final rows = id == null || id == 'eq.swipe-deck'
+              ? [row(variants: variants)]
+              : <Map<String, dynamic>>[];
+          return http.Response(jsonEncode(rows), 200);
+        }
+        return http.Response('not found', 404);
+      });
+      return CodrelCommandRunner(
+        client: RegistryClient(
+          baseUrl: 'https://registry.test',
+          apiKey: 'test',
+          httpClient: mock,
+        ),
+      );
+    }
+
     setUp(() {
       tempDir = Directory.systemTemp.createTempSync('codrel_cli_test_');
-      runner = CodrelCommandRunner();
+      runner = buildRunner();
     });
 
     tearDown(() {
-      if (tempDir.existsSync()) {
-        tempDir.deleteSync(recursive: true);
-      }
+      if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
       runner.client.close();
     });
 
-    test('--version outputs version successfully', () async {
-      final code = await runner.run(['--version']);
-      expect(code, equals(0));
+    test('--version succeeds', () async {
+      expect(await runner.run(['--version']), 0);
     });
 
-    test('list command executes successfully', () async {
-      final code = await runner.run(['list']);
-      expect(code, equals(0));
+    test('list succeeds', () async {
+      expect(await runner.run(['list']), 0);
     });
 
-    test('info command displays component details', () async {
-      final code = await runner.run(['info', 'swipe-deck']);
-      expect(code, equals(0));
+    test('info succeeds for a known slug and fails for unknown ones', () async {
+      expect(await runner.run(['info', 'swipe-deck']), 0);
+      expect(await runner.run(['info', 'invalid-slug-xyz']), 1);
+      expect(await runner.run(['info', 'bad&slug']), 1);
     });
 
-    test('info command fails gracefully for invalid slug', () async {
-      final code = await runner.run(['info', 'invalid-slug-xyz']);
-      expect(code, equals(1));
+    test('--dry-run does not write to disk', () async {
+      expect(await runner.run(['add', 'swipe-deck', '--dry-run']), 0);
+      expect(tempDir.listSync(), isEmpty);
     });
 
-    test('add command with --dry-run previews without writing to disk',
-        () async {
-      final code = await runner.run(['add', 'swipe-deck', '--dry-run']);
-      expect(code, equals(0));
-      final files = tempDir.listSync();
-      expect(files, isEmpty);
-    });
-
-    test('add command writes component file to designated directory', () async {
-      final code = await runner.run([
-        'add',
-        'swipe-deck',
-        '--dir',
-        tempDir.path,
-      ]);
-      expect(code, equals(0));
-
-      final generatedFile = File(p.join(tempDir.path, 'swipe_card_deck.dart'));
-      expect(generatedFile.existsSync(), isTrue);
-      final content = generatedFile.readAsStringSync();
-      expect(content, isNotEmpty);
+    test('add writes a self-contained vanilla component', () async {
+      expect(await runner.run(['add', 'swipe-deck', '--dir', tempDir.path]), 0);
+      final content =
+          File(p.join(tempDir.path, 'swipe_card_deck.dart')).readAsStringSync();
       expect(content, contains('class SwipeCardDeck'));
+      expect(content, contains('_CodrelColors.accent'));
+      expect(content, isNot(contains("import '../")));
     });
 
-    test('add command prevents overwrite unless --overwrite is passed',
-        () async {
-      // First write
-      final firstCode = await runner.run([
-        'add',
-        'swipe-deck',
-        '--dir',
-        tempDir.path,
-      ]);
-      expect(firstCode, equals(0));
-
-      // Second write without --overwrite should fail
-      final secondCode = await runner.run([
-        'add',
-        'swipe-deck',
-        '--dir',
-        tempDir.path,
-      ]);
-      expect(secondCode, equals(1));
-
-      // With --overwrite should succeed
-      final thirdCode = await runner.run([
-        'add',
-        'swipe-deck',
-        '--dir',
-        tempDir.path,
-        '--overwrite',
-      ]);
-      expect(thirdCode, equals(0));
+    test('add refuses to overwrite without --overwrite', () async {
+      final args = ['add', 'swipe-deck', '--dir', tempDir.path];
+      expect(await runner.run(args), 0);
+      expect(await runner.run(args), 1);
+      expect(await runner.run([...args, '--overwrite']), 0);
     });
 
-    test('add command adapts to Riverpod architecture', () async {
-      final code = await runner.run([
-        'add',
-        'smart-otp',
-        '--dir',
-        tempDir.path,
-        '--arch',
-        'riverpod',
-      ]);
-      expect(code, equals(0));
+    test('add installs a published architecture variant', () async {
+      runner = buildRunner(variants: {'riverpod': riverpodVariant});
+      final code = await runner.run(
+          ['add', 'swipe-deck', '--dir', tempDir.path, '--arch', 'riverpod']);
+      expect(code, 0);
+      final content =
+          File(p.join(tempDir.path, 'swipe_card_deck.dart')).readAsStringSync();
+      expect(content, contains('ConsumerWidget'));
+    });
 
-      final generatedFile = File(p.join(tempDir.path, 'smart_otp_input.dart'));
-      expect(generatedFile.existsSync(), isTrue);
-      final content = generatedFile.readAsStringSync();
-      expect(content, contains('flutter_riverpod'));
-    }, timeout: const Timeout(Duration(seconds: 60)));
+    test('add fails without writing when a variant is not published', () async {
+      final code = await runner
+          .run(['add', 'swipe-deck', '--dir', tempDir.path, '--arch', 'bloc']);
+      expect(code, 1);
+      expect(tempDir.listSync(), isEmpty);
+    });
+
+    test('add rejects legacy Riverpod variants', () async {
+      runner = buildRunner(variants: {'riverpod': legacyRiverpodVariant});
+      final code = await runner.run(
+          ['add', 'swipe-deck', '--dir', tempDir.path, '--arch', 'riverpod']);
+      expect(code, 1);
+      expect(tempDir.listSync(), isEmpty);
+    });
   });
 }

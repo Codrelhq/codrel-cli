@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:args/command_runner.dart';
+import '../adapter/architecture_adapter.dart';
 import '../api/registry_client.dart';
 import '../models/cli_component.dart';
 
@@ -29,6 +30,10 @@ class InfoCommand extends Command<int> {
     }
 
     final slug = args.first.trim().toLowerCase();
+    if (!RegistryClient.isValidSlug(slug)) {
+      stderr.writeln('Error: "$slug" is not a valid component slug.');
+      return 1;
+    }
     stdout.writeln('Looking up "$slug"...\n');
 
     CliComponent? component;
@@ -54,10 +59,16 @@ class InfoCommand extends Command<int> {
     stdout.writeln('\nDescription:');
     stdout.writeln('  ${component.description}');
     stdout.writeln('\nInstall commands:');
-    stdout.writeln('  • Vanilla:   codrel add ${component.id}');
-    stdout.writeln('  • Riverpod:  codrel add ${component.id} --arch riverpod');
-    stdout.writeln('  • GetX:      codrel add ${component.id} --arch getx');
-    stdout.writeln('  • BLoC:      codrel add ${component.id} --arch bloc\n');
+    for (final arch in Architecture.values) {
+      final flag = arch == Architecture.vanilla ? '' : ' --arch ${arch.flag}';
+      final cached = arch == Architecture.vanilla ||
+              component.architectureTemplates.containsKey(arch.flag)
+          ? ''
+          : '  (not published yet)';
+      stdout.writeln(
+          '  • ${arch.label.padRight(16)} codrel add ${component.id}$flag$cached');
+    }
+    stdout.writeln('');
 
     return 0;
   }

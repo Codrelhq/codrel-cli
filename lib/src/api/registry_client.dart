@@ -6,7 +6,10 @@ import '../models/cli_component.dart';
 
 /// Exception thrown when a registry network or parsing operation fails.
 class RegistryException implements Exception {
+  /// Description of the failure, suitable for showing to users.
   final String message;
+
+  /// Creates an exception with [message].
   const RegistryException(this.message);
 
   @override
@@ -15,10 +18,14 @@ class RegistryException implements Exception {
 
 /// Client for communicating with the remote Codrel component registry.
 class RegistryClient {
+  /// Registry base URL. Defaults to `CODREL_SUPABASE_URL` or the public registry.
   final String baseUrl;
+
+  /// Public API key. Defaults to `CODREL_SUPABASE_KEY` or the public key.
   final String apiKey;
   final http.Client _httpClient;
 
+  /// Creates a client. Pass [httpClient] to customize transport or for tests.
   RegistryClient({
     String? baseUrl,
     String? apiKey,
@@ -30,6 +37,11 @@ class RegistryClient {
             Platform.environment['CODREL_SUPABASE_KEY'] ??
             'sb_publishable_wn16IRfYvn_TmPiQfMbn0A_UnkyB9p4',
         _httpClient = httpClient ?? http.Client();
+
+  static final RegExp _slugPattern = RegExp(r'^[a-z0-9]+(-[a-z0-9]+)*$');
+
+  /// Whether [id] is a well-formed registry slug.
+  static bool isValidSlug(String id) => _slugPattern.hasMatch(id);
 
   Map<String, String> get _headers => {
         'apikey': apiKey,
@@ -74,9 +86,10 @@ class RegistryClient {
 
   /// Retrieves a single component by its unique identifier or slug.
   Future<CliComponent?> getComponent(String id) async {
+    if (!isValidSlug(id)) return null;
     try {
-      final uri = Uri.parse(
-        '$baseUrl/rest/v1/components?id=eq.$id&select=*',
+      final uri = Uri.parse('$baseUrl/rest/v1/components').replace(
+        queryParameters: {'id': 'eq.$id', 'select': '*'},
       );
       final response = await _httpClient
           .get(uri, headers: _headers)
@@ -108,7 +121,8 @@ class RegistryClient {
     }
   }
 
-  /// Requests architectural conversion for a component via the edge function.
+  /// Fetches a published [architecture] variant of [componentId], or `null`
+  /// when it has not been published.
   Future<String?> getArchitectureFromCloud({
     required String componentId,
     required String architecture,
@@ -124,15 +138,13 @@ class RegistryClient {
               'architecture': architecture,
             }),
           )
-          .timeout(const Duration(seconds: 35));
+          .timeout(const Duration(seconds: 20));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data is Map && data['code'] is String) {
           final code = (data['code'] as String).trim();
-          if (code.contains('class ') && !code.startsWith('parent passes')) {
-            return code;
-          }
+          if (code.contains('class ')) return code;
         }
       }
     } catch (_) {

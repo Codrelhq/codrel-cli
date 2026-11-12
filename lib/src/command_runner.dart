@@ -7,12 +7,14 @@ import 'commands/info_command.dart';
 import 'commands/list_command.dart';
 
 /// Current version of the Codrel CLI.
-const String kCodrelCliVersion = '1.0.0';
+const String kCodrelCliVersion = '1.1.0';
 
 /// The command runner orchestrating all Codrel CLI subcommands.
 class CodrelCommandRunner extends CommandRunner<int> {
+  /// Client shared by all commands. Close it when the runner is done.
   final RegistryClient client;
 
+  /// Creates the runner. Pass [client] to point at another registry.
   CodrelCommandRunner({RegistryClient? client})
       : client = client ?? RegistryClient(),
         super(
